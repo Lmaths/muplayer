@@ -89,6 +89,12 @@ do (root = @, factory = (cfg, utils, Events) ->
             0
 
     Events.mixTo(EngineCore)
+
+    EngineCore::trigger = (type, value) ->
+        if @_enable
+            Events::trigger.call(@, type, value)
+        @
+
     EngineCore
 ) ->
     if typeof exports is 'object'

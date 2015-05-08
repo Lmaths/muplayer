@@ -33,6 +33,11 @@ do (root = @, factory = (
             opts = @opts
             @$el = $el = $(Engine.el.replace(/{{DATETIME}}/g, +new Date())).appendTo('body')
 
+            # HACK: 怀疑aralejs事件库有潜在bug, 内核切换时（比如从FlashMP4Core切到FlashMP3Core），
+            # statechangeHandle有可能派发连续的重复事件，导致STATES.END被重复触发引发跳歌。
+            # 升级事件库后有其他问题，暂时通过lastE标记解决。后续可以更新事件库或深入研究下。
+            @_lastE = {}
+
             for engine, i in opts.engines
                 { type, args } = engine
                 args = args or {}
@@ -46,6 +51,7 @@ do (root = @, factory = (
                     throw new Error "Missing engine type: #{String(engine.type)}"
 
                 if engine._test and engine._test()
+                    @_initEngineEvents(engine)
                     @engines.push(engine)
 
             if @engines.length
@@ -54,17 +60,13 @@ do (root = @, factory = (
                 # 没有适配的内核时就初始化EngineCore这个基类，以防调用报错
                 @setEngine(new EngineCore)
 
-        setEngine: (engine) ->
+        _initEngineEvents: (engine) ->
             self = @
 
-            # HACK: 怀疑aralejs事件库有潜在bug, 内核切换时（比如从FlashMP4Core切到FlashMP3Core），
-            # statechangeHandle有可能派发连续的重复事件，导致STATES.END被重复触发引发跳歌。
-            # 升级事件库后有其他问题，暂时通过lastE标记解决。后续可以更新事件库或深入研究下。
-            @_lastE = {} unless @_lastE
-
             statechangeHandle = (e) ->
+                { _lastE } = self
                 { newState, oldState } = e
-                if oldState is self._lastE.oldState and newState is self._lastE.newState
+                if oldState is _lastE.oldState and newState is _lastE.newState
                     return
                 self._lastE =
                     oldState: oldState
@@ -81,25 +83,21 @@ do (root = @, factory = (
             errorHandle = (err) ->
                 self.trigger(EVENTS.ERROR, err)
 
-            bindEvents = (engine) ->
-                engine.on(EVENTS.STATECHANGE, statechangeHandle)
-                    .on(EVENTS.POSITIONCHANGE, positionHandle)
-                    .on(EVENTS.PROGRESS, progressHandle)
-                    .on(EVENTS.ERROR, errorHandle)
-            unbindEvents = (engine) ->
-                engine.off(EVENTS.STATECHANGE, statechangeHandle)
-                    .off(EVENTS.POSITIONCHANGE, positionHandle)
-                    .off(EVENTS.PROGRESS, progressHandle)
-                    .off(EVENTS.ERROR, errorHandle)
+            engine.on(EVENTS.STATECHANGE, statechangeHandle)
+                .on(EVENTS.POSITIONCHANGE, positionHandle)
+                .on(EVENTS.PROGRESS, progressHandle)
+                .on(EVENTS.ERROR, errorHandle)
 
-            unless @curEngine
-                @curEngine = bindEvents(engine)
-            else if @curEngine isnt engine
+            @
+
+        setEngine: (engine) ->
+            if @curEngine and @curEngine isnt engine
                 oldEngine = @curEngine
-                unbindEvents(oldEngine).reset()
-                @curEngine = bindEvents(engine)
-                @curEngine.setVolume(oldEngine.getVolume())
+                oldEngine._enable = false
+                engine.setVolume(oldEngine.getVolume())
                     .setMute(oldEngine.getMute())
+            engine._enable = true
+            @curEngine = engine
 
         canPlayType: (type) ->
             type = 'm4a' if type is 'mp4a'

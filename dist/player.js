@@ -930,6 +930,12 @@ var indexOf = [].indexOf || function(item) { for (var i = 0, l = this.length; i 
 
   })();
   Events.mixTo(EngineCore);
+  EngineCore.prototype.trigger = function(type, value) {
+    if (this._enable) {
+      Events.prototype.trigger.call(this, type, value);
+    }
+    return this;
+  };
   return EngineCore;
 });
 
@@ -1246,9 +1252,9 @@ var bind = function(fn, me){ return function(){ return fn.apply(me, arguments); 
       self = this;
       audio = this.audio, trigger = this.trigger;
       ref1 = [null, null, false], errorTimer = ref1[0], progressTimer = ref1[1], canPlayThrough = ref1[2];
-      this.trigger = function(type, listener) {
+      this.trigger = function(type, value) {
         if (!self._isEmpty()) {
-          return trigger.call(self, type, listener);
+          return trigger.call(self, type, value);
         }
       };
       progress = function(per) {
@@ -2105,6 +2111,7 @@ var extend = function(child, parent) { for (var key in parent) { if (hasProp.cal
       this.engines = [];
       opts = this.opts;
       this.$el = $el = $(Engine.el.replace(/{{DATETIME}}/g, +new Date())).appendTo('body');
+      this._lastE = {};
       ref1 = opts.engines;
       for (i = j = 0, len = ref1.length; j < len; i = ++j) {
         engine = ref1[i];
@@ -2121,6 +2128,7 @@ var extend = function(child, parent) { for (var key in parent) { if (hasProp.cal
           throw new Error("Missing engine type: " + (String(engine.type)));
         }
         if (engine._test && engine._test()) {
+          this._initEngineEvents(engine);
           this.engines.push(engine);
         }
       }
@@ -2131,16 +2139,14 @@ var extend = function(child, parent) { for (var key in parent) { if (hasProp.cal
       }
     };
 
-    Engine.prototype.setEngine = function(engine) {
-      var bindEvents, errorHandle, oldEngine, positionHandle, progressHandle, self, statechangeHandle, unbindEvents;
+    Engine.prototype._initEngineEvents = function(engine) {
+      var errorHandle, positionHandle, progressHandle, self, statechangeHandle;
       self = this;
-      if (!this._lastE) {
-        this._lastE = {};
-      }
       statechangeHandle = function(e) {
-        var newState, oldState;
+        var _lastE, newState, oldState;
+        _lastE = self._lastE;
         newState = e.newState, oldState = e.oldState;
-        if (oldState === self._lastE.oldState && newState === self._lastE.newState) {
+        if (oldState === _lastE.oldState && newState === _lastE.newState) {
           return;
         }
         self._lastE = {
@@ -2161,20 +2167,19 @@ var extend = function(child, parent) { for (var key in parent) { if (hasProp.cal
       errorHandle = function(err) {
         return self.trigger(EVENTS.ERROR, err);
       };
-      bindEvents = function(engine) {
-        return engine.on(EVENTS.STATECHANGE, statechangeHandle).on(EVENTS.POSITIONCHANGE, positionHandle).on(EVENTS.PROGRESS, progressHandle).on(EVENTS.ERROR, errorHandle);
-      };
-      unbindEvents = function(engine) {
-        return engine.off(EVENTS.STATECHANGE, statechangeHandle).off(EVENTS.POSITIONCHANGE, positionHandle).off(EVENTS.PROGRESS, progressHandle).off(EVENTS.ERROR, errorHandle);
-      };
-      if (!this.curEngine) {
-        return this.curEngine = bindEvents(engine);
-      } else if (this.curEngine !== engine) {
+      engine.on(EVENTS.STATECHANGE, statechangeHandle).on(EVENTS.POSITIONCHANGE, positionHandle).on(EVENTS.PROGRESS, progressHandle).on(EVENTS.ERROR, errorHandle);
+      return this;
+    };
+
+    Engine.prototype.setEngine = function(engine) {
+      var oldEngine;
+      if (this.curEngine && this.curEngine !== engine) {
         oldEngine = this.curEngine;
-        unbindEvents(oldEngine).reset();
-        this.curEngine = bindEvents(engine);
-        return this.curEngine.setVolume(oldEngine.getVolume()).setMute(oldEngine.getMute());
+        oldEngine._enable = false;
+        engine.setVolume(oldEngine.getVolume()).setMute(oldEngine.getMute());
       }
+      engine._enable = true;
+      return this.curEngine = engine;
     };
 
     Engine.prototype.canPlayType = function(type) {

@@ -86,8 +86,8 @@ do (root = @, factory = (cfg, utils, EngineCore, Modernizr) ->
             { audio, trigger } = @
             [ errorTimer, progressTimer, canPlayThrough ]  = [ null, null, false ]
 
-            @trigger = (type, listener) ->
-                trigger.call(self, type, listener) unless self._isEmpty()
+            @trigger = (type, value) ->
+                trigger.call(self, type, value) unless self._isEmpty()
 
             progress = (per) ->
                 per = per or self.getLoadedPercent()
